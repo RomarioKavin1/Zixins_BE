@@ -27,6 +27,7 @@ router.get("/hello", async (req, res) => {
 
 router.post("/image-pinata", async (req, res) => {
   const { image } = req.body;
+  let data;
 
   try {
     let fetchUrl = JSON.stringify({
@@ -43,13 +44,18 @@ router.post("/image-pinata", async (req, res) => {
       responseType: "arraybuffer",
       data: fetchUrl,
     };
+    try {
+      data = (await axios.request(config)).data;
+    } catch (error) {
+      res.status(200).json({ reason: "the next leg error", error: error });
+    }
 
-    const { data } = await axios.request(config);
     const imageBuffer = Buffer.from(data, "binary");
 
     const tempFilePath = "./image.jpg";
     fs.writeFileSync(tempFilePath, imageBuffer);
-    // // Create FormData
+
+    const formData = new FormData();
     formData.append("file", fs.createReadStream(tempFilePath), {
       filename: "image.jpg",
     });
@@ -62,6 +68,7 @@ router.post("/image-pinata", async (req, res) => {
       cidVersion: 0,
     });
     formData.append("pinataOptions", pinataOptions);
+
     try {
       const response = await axios.post(
         "https://api.pinata.cloud/pinning/pinFileToIPFS",
@@ -86,11 +93,11 @@ router.post("/image-pinata", async (req, res) => {
           ".png",
       });
     } catch (error) {
-      console.log(error);
+      res.status(200).json({ reason: "pinata error", error: error });
     }
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ reson: "Weird error", error: error });
   }
 });
 router.post("/image", async (req, res) => {
