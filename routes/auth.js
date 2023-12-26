@@ -5,21 +5,6 @@ const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
 require("dotenv").config();
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
-
-const supabase = SUPABASE_URL
-  ? createClient(SUPABASE_URL, SUPABASE_KEY || "")
-  : null;
-
-const uploadImageToBucket = async (image, name) => {
-  const { data, error } = supabase
-    ? await supabase.storage.from("images").upload(`${name}.png`, image, {
-        contentType: "image/png",
-      })
-    : { data: null, error: new Error("supabase not initialized") };
-};
-
 router.get("/hello", async (req, res) => {
   console.log("hello");
   res.status(200).json({ response: "hello v1" });
@@ -28,12 +13,24 @@ router.get("/hello", async (req, res) => {
 router.post("/image-pinata", async (req, res) => {
   const { image } = req.body;
   let data;
+  let fetchUrl;
+  let config;
+  let imageBuffer;
+  let formData;
+  let blob;
+  let response;
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+  const supabase = SUPABASE_URL
+    ? createClient(SUPABASE_URL, SUPABASE_KEY || "")
+    : null;
 
   try {
-    let fetchUrl = JSON.stringify({
+    fetchUrl = JSON.stringify({
       imgUrl: image,
     });
-    let config = {
+    config = {
       method: "post",
       maxBodyLength: Infinity,
       url: "https://api.thenextleg.io/getImage",
@@ -44,31 +41,40 @@ router.post("/image-pinata", async (req, res) => {
       responseType: "arraybuffer",
       data: fetchUrl,
     };
+
     try {
       data = (await axios.request(config)).data;
     } catch (error) {
       res.status(200).json({ reason: "the next leg error", error: error });
     }
 
-    const imageBuffer = Buffer.from(data, "binary");
+    try {
+      imageBuffer = Buffer.from(data, "binary");
 
-    const tempFilePath = "./image.jpg";
-    fs.writeFileSync(tempFilePath, imageBuffer);
+      fs.writeFileSync("./image.jpg", imageBuffer);
 
-    const formData = new FormData();
-    formData.append("file", fs.createReadStream(tempFilePath), {
-      filename: "image.jpg",
-    });
-    const pinataMetadata = JSON.stringify({
-      name: "ZexCraft NFT",
-    });
-    formData.append("pinataMetadata", pinataMetadata);
+      formData = new FormData();
+      formData.append("file", fs.createReadStream("./image.jpg"), {
+        filename: "image.jpg",
+      });
+      const pinataMetadata = JSON.stringify({
+        name: "ZexCraft NFT",
+      });
+      formData.append("pinataMetadata", pinataMetadata);
 
-    const pinataOptions = JSON.stringify({
-      cidVersion: 0,
-    });
-    formData.append("pinataOptions", pinataOptions);
-    let response;
+      const pinataOptions = JSON.stringify({
+        cidVersion: 0,
+      });
+      formData.append("pinataOptions", pinataOptions);
+    } catch (e) {
+      res.status(200).json({ reason: "formdata formation error", error: e });
+    }
+    try {
+      blob = new Blob([imageBuffer], { type: "image/jpeg" });
+    } catch (e) {
+      res.status(200).json({ reason: "blob formation error", error: e });
+    }
+
     try {
       response = await axios.post(
         "https://api.pinata.cloud/pinning/pinFileToIPFS",
@@ -84,15 +90,30 @@ router.post("/image-pinata", async (req, res) => {
     } catch (error) {
       res.status(200).json({ reason: "pinata error", error: error });
     }
-    const blob = new Blob([imageBuffer], { type: "image/jpeg" });
+
     try {
-      uploadImageToBucket(blob, response.data.IpfsHash + ".png");
-    } catch (error) {
-      res.status(200).json({ reason: "supabase error", error: error });
+      const { data, error } = supabase
+        ? await supabase.storage
+            .from("images")
+            .upload(`${response.data.IpfsHash + ".png"}`, blob, {
+              contentType: "image/png",
+            })
+        : { data: null, error: new Error("supabase not initialized") };
+      if (error) {
+        res
+          .status(200)
+          .json({ reason: "supabase returned error", error: error });
+      } else {
+        console.log("Supbase success");
+      }
+    } catch (e) {
+      res.status(200).json({ reason: "supabase error", error: e });
     }
 
     res.status(200).json({
-      image: response.data.IpfsHash,
+      image:
+        "https://amber-accessible-porpoise-584.mypinata.cloud/ipfs/" +
+        response.data.IpfsHash,
       imageAlt:
         SUPABASE_URL +
         "/storage/v1/object/public/images/" +
@@ -106,12 +127,24 @@ router.post("/image-pinata", async (req, res) => {
 });
 router.post("/image", async (req, res) => {
   const { image } = req.body;
+  let data;
+  let fetchUrl;
+  let config;
+  let imageBuffer;
+  let formData;
+  let blob;
+  let response;
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
+  const supabase = SUPABASE_URL
+    ? createClient(SUPABASE_URL, SUPABASE_KEY || "")
+    : null;
   try {
-    let fetchUrl = JSON.stringify({
+    fetchUrl = JSON.stringify({
       imgUrl: image,
     });
-    let config = {
+    config = {
       method: "post",
       maxBodyLength: Infinity,
       url: "https://api.thenextleg.io/getImage",
@@ -122,34 +155,63 @@ router.post("/image", async (req, res) => {
       responseType: "arraybuffer",
       data: fetchUrl,
     };
+    try {
+      data = (await axios.request(config)).data;
+    } catch (e) {
+      res.status(200).json({ reason: "the next leg error", error: e });
+    }
 
-    const { data } = await axios.request(config);
-    const imageBuffer = Buffer.from(data, "binary");
+    try {
+      imageBuffer = Buffer.from(data, "binary");
 
-    const tempFilePath = "./image.jpg";
-    fs.writeFileSync(tempFilePath, imageBuffer);
-    // // Create FormData
-    const formData = new FormData();
-    formData.append("file", fs.createReadStream(tempFilePath), {
-      filename: "image.jpg",
-    });
+      fs.writeFileSync("./image.jpg", imageBuffer);
 
-    const response = await axios.post(
-      "https://api.nft.storage/upload",
-      formData,
-      {
+      formData = new FormData();
+      formData.append("file", fs.createReadStream("./image.jpg"), {
+        filename: "image.jpg",
+      });
+    } catch (e) {
+      res.status(200).json({ reason: "formdata formation error", error: e });
+    }
+    try {
+      blob = new Blob([imageBuffer], { type: "image/jpeg" });
+    } catch (e) {
+      res.status(200).json({ reason: "blob formation error", error: e });
+    }
+
+    try {
+      response = await axios.post("https://api.nft.storage/upload", formData, {
         headers: {
           Authorization: `Bearer ${process.env.NFT_STORAGE_KEY}`,
           ...formData.getHeaders(),
         },
-      }
-    );
+      });
+    } catch (e) {
+      res.status(200).json({ reason: "nft storage error", error: e });
+    }
 
-    const blob = new Blob([imageBuffer], { type: "image/jpeg" });
-    uploadImageToBucket(blob, response.data.value.cid);
+    try {
+      const { data, error } = supabase
+        ? await supabase.storage
+            .from("images")
+            .upload(`${response.data.value.cid + ".png"}`, blob, {
+              contentType: "image/png",
+            })
+        : { data: null, error: new Error("supabase not initialized") };
+      if (error) {
+        res
+          .status(200)
+          .json({ reason: "supabase returned error", error: error });
+      }
+    } catch (e) {
+      res.status(200).json({ reason: "supabase error", error: e });
+    }
 
     res.status(200).json({
-      image: response.data.value.cid,
+      image:
+        "https://cloudflare-ipfs.com/ipfs/" +
+        response.data.value.cid +
+        "/image.jpg",
       imageAlt:
         SUPABASE_URL +
         "/storage/v1/object/public/images/" +
