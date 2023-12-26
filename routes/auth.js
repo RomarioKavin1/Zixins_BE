@@ -68,9 +68,9 @@ router.post("/image-pinata", async (req, res) => {
       cidVersion: 0,
     });
     formData.append("pinataOptions", pinataOptions);
-
+    let response;
     try {
-      const response = await axios.post(
+      response = await axios.post(
         "https://api.pinata.cloud/pinning/pinFileToIPFS",
         formData,
         {
@@ -81,20 +81,24 @@ router.post("/image-pinata", async (req, res) => {
           },
         }
       );
-      const blob = new Blob([imageBuffer], { type: "image/jpeg" });
-      uploadImageToBucket(blob, response.data.IpfsHash + ".png");
-
-      res.status(200).json({
-        image: response.data.IpfsHash,
-        imageAlt:
-          SUPABASE_URL +
-          "/storage/v1/object/public/images/" +
-          response.data.IpfsHash +
-          ".png",
-      });
     } catch (error) {
       res.status(200).json({ reason: "pinata error", error: error });
     }
+    const blob = new Blob([imageBuffer], { type: "image/jpeg" });
+    try {
+      uploadImageToBucket(blob, response.data.IpfsHash + ".png");
+    } catch (error) {
+      res.status(200).json({ reason: "supabase error", error: error });
+    }
+
+    res.status(200).json({
+      image: response.data.IpfsHash,
+      imageAlt:
+        SUPABASE_URL +
+        "/storage/v1/object/public/images/" +
+        response.data.IpfsHash +
+        ".png",
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ reson: "Weird error", error: error });
